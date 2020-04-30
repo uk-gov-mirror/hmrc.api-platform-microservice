@@ -47,18 +47,21 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
       ConfigFactory.parseString(
         s"""
            |deleteUnusedApplicationsAfter = 365d
-           |notifyDeletionPendingInAdvance = 30d
            |
            |UpdateUnusedApplicationsRecords-SANDBOX {
            |  startTime = "00:30"
            |  executionInterval = 1d
            |  enabled = false
+           |  externalEnvironmentName = "Sandbox"
+           |  notifyDeletionPendingInAdvance = 30d
            |}
            |
            |UpdateUnusedApplicationsRecords-PRODUCTION {
            |  startTime = "01:00"
            |  executionInterval = 1d
            |  enabled = false
+           |  externalEnvironmentName = "Production"
+           |  notifyDeletionPendingInAdvance = 30d
            |}
            |
            |""".stripMargin)

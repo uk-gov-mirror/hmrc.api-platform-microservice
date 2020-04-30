@@ -28,6 +28,15 @@ case class ApplicationUsageDetails(applicationId: UUID, creationDate: DateTime, 
 
 case class UnusedApplication(applicationId: UUID, environment: Environment, lastInteractionDate: DateTime)
 
+case class UnusedApplicationToBeDeletedNotification(userEmailAddress: String,
+                                                    userFirstName: String,
+                                                    userLastName: String,
+                                                    applicationName: String,
+                                                    environmentName: String,
+                                                    timeSinceLastUse: String,
+                                                    timeBeforeDeletion: String,
+                                                    dateOfScheduledDeletion: String)
+
 object Environment extends Enumeration {
   type Environment = Value
   val SANDBOX, PRODUCTION = Value

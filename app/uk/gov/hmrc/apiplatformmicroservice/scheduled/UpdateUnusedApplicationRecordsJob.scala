@@ -37,13 +37,14 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
                                                   mongo: ReactiveMongoComponent)
   extends TimedJob(s"UpdateUnusedApplicationsRecords-$environment", configuration, mongo) {
 
+  val updateUnusedApplicationRecordsJobConfig: UpdateUnusedApplicationRecordsJobConfig =
+    configuration.underlying.as[UpdateUnusedApplicationRecordsJobConfig](name)
   val DeleteUnusedApplicationsAfter: FiniteDuration = configuration.underlying.as[FiniteDuration]("deleteUnusedApplicationsAfter")
-  val NotifyDeletionPendingInAdvance: FiniteDuration = configuration.underlying.as[FiniteDuration]("notifyDeletionPendingInAdvance")
 
   def notificationCutoffDate(): DateTime =
     DateTime.now
       .minus(DeleteUnusedApplicationsAfter.toMillis)
-      .plus(NotifyDeletionPendingInAdvance.toMillis)
+      .plus(updateUnusedApplicationRecordsJobConfig.notifyDeletionPendingInAdvance.toMillis)
 
   override def functionToExecute()(implicit executionContext: ExecutionContext): Future[RunningOfJobSuccessful] = {
     def unknownApplications(knownApplications: List[UnusedApplication], currentUnusedApplications: List[ApplicationUsageDetails]): Seq[UnusedApplication] = {
@@ -96,3 +97,5 @@ class UpdateUnusedProductionApplicationRecordJob @Inject()(@Named("tpa-productio
                                                         configuration: Configuration,
                                                         mongo: ReactiveMongoComponent)
   extends UpdateUnusedApplicationRecordsJob(Environment.PRODUCTION, thirdPartyApplicationConnector, unusedApplicationsRepository, configuration, mongo)
+
+case class UpdateUnusedApplicationRecordsJobConfig(notifyDeletionPendingInAdvance: FiniteDuration, externalEnvironmentName: String)
