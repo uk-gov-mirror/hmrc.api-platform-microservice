@@ -24,9 +24,13 @@ import play.api.libs.json._
 import uk.gov.hmrc.apiplatformmicroservice.models.Environment.Environment
 import uk.gov.hmrc.mongo.json.ReactiveMongoFormats
 
-case class ApplicationUsageDetails(applicationId: UUID, creationDate: DateTime, lastAccessDate: Option[DateTime])
+case class ApplicationUsageDetails(applicationId: UUID,
+                                   applicationName: String,
+                                   administrators: Set[String],
+                                   creationDate: DateTime,
+                                   lastAccessDate: Option[DateTime])
 
-case class UnusedApplication(applicationId: UUID, environment: Environment, lastInteractionDate: DateTime)
+case class UnusedApplication(applicationId: UUID, applicationName: String, administrators: Set[String], environment: Environment, lastInteractionDate: DateTime)
 
 case class UnusedApplicationToBeDeletedNotification(userEmailAddress: String,
                                                     userFirstName: String,
@@ -50,6 +54,8 @@ object MongoFormat {
 
   val unusedApplicationReads: Reads[UnusedApplication] = (
     (JsPath \ "applicationId").read[UUID] and
+      (JsPath \ "applicationName").read[String] and
+      (JsPath \ "administrators").read[Set[String]] and
       (JsPath \ "environment").read[Environment] and
       (JsPath \ "lastInteractionDate").read[DateTime]
     )(UnusedApplication.apply _)

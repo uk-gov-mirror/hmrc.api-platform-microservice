@@ -20,7 +20,7 @@ import java.util.UUID
 
 import com.typesafe.config.{Config, ConfigFactory}
 import org.joda.time.DateTime
-import org.mockito.Mockito.{verifyNoInteractions, when, verify, times}
+import org.mockito.Mockito.{times, verify, verifyNoInteractions, when}
 import org.mockito.{ArgumentCaptor, ArgumentMatchersSugar}
 import org.scalatestplus.mockito.MockitoSugar
 import org.scalatestplus.play.PlaySpec
@@ -36,6 +36,7 @@ import uk.gov.hmrc.mongo.{MongoConnector, MongoSpecSupport}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.util.Random
 
 class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
   with MockitoSugar with ArgumentMatchersSugar with MongoSpecSupport with FutureAwaits with DefaultAwaitTimeout {
@@ -101,9 +102,9 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
   "SANDBOX job" should {
     "add all newly discovered unused applications to database" in new SandboxJobSetup {
       val applicationWithLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)))
+        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
       val applicationWithoutLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), None)
+        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), None, Set())
 
       when(mockSandboxThirdPartyApplicationConnector.applicationsLastUsedBefore(*))
         .thenReturn(Future.successful(List(applicationWithLastUseDate._1, applicationWithoutLastUseDate._1)))
@@ -124,7 +125,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
     "not persist application details already stored in database" in new SandboxJobSetup {
       val application: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)))
+        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
 
       when(mockSandboxThirdPartyApplicationConnector.applicationsLastUsedBefore(*))
         .thenReturn(Future.successful(List(application._1)))
@@ -138,7 +139,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
     "remove applications that have been used since last update" in new SandboxJobSetup {
       val application: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)))
+        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
 
       when(mockSandboxThirdPartyApplicationConnector.applicationsLastUsedBefore(*)).thenReturn(Future.successful(List.empty))
       when(mockUnusedApplicationsRepository.applicationsByEnvironment(Environment.SANDBOX)).thenReturn(Future(List(application._2)))
@@ -154,9 +155,9 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
   "PRODUCTION job" should {
     "add all newly discovered unused applications to database" in new ProductionJobSetup {
       val applicationWithLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)))
+        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
       val applicationWithoutLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), None)
+        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), None, Set())
 
       when(mockProductionThirdPartyApplicationConnector.applicationsLastUsedBefore(*))
         .thenReturn(Future.successful(List(applicationWithLastUseDate._1, applicationWithoutLastUseDate._1)))
@@ -177,7 +178,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
     "not persist application details already stored in database" in new ProductionJobSetup {
       val application: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)))
+        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
 
       when(mockProductionThirdPartyApplicationConnector.applicationsLastUsedBefore(*))
         .thenReturn(Future.successful(List(application._1)))
@@ -191,7 +192,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
     "remove applications that have been used since last update" in new ProductionJobSetup {
       val application: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)))
+        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
 
       when(mockProductionThirdPartyApplicationConnector.applicationsLastUsedBefore(*)).thenReturn(Future.successful(List.empty))
       when(mockUnusedApplicationsRepository.applicationsByEnvironment(Environment.PRODUCTION)).thenReturn(Future(List(application._2)))
@@ -204,10 +205,14 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
     }
   }
 
-  def applicationDetails(environment: Environment, creationDate: DateTime, lastAccessDate: Option[DateTime]): (ApplicationUsageDetails, UnusedApplication) = {
+  def applicationDetails(environment: Environment,
+                         creationDate: DateTime,
+                         lastAccessDate: Option[DateTime],
+                         administrators: Set[String]): (ApplicationUsageDetails, UnusedApplication) = {
     val applicationId = UUID.randomUUID()
+    val applicationName = Random.alphanumeric.take(10).mkString
 
-    (ApplicationUsageDetails(applicationId, creationDate, lastAccessDate),
-      UnusedApplication(applicationId, environment, lastAccessDate.getOrElse(creationDate)))
+    (ApplicationUsageDetails(applicationId, applicationName, administrators, creationDate, lastAccessDate),
+      UnusedApplication(applicationId, applicationName, administrators, environment, lastAccessDate.getOrElse(creationDate)))
   }
 }

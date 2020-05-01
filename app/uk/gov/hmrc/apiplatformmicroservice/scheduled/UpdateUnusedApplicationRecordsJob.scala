@@ -51,7 +51,7 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
       val knownApplicationIds = knownApplications.map(_.applicationId)
       currentUnusedApplications
         .filterNot(app => knownApplicationIds.contains(app.applicationId))
-        .map(app => UnusedApplication(app.applicationId, environment, app.lastAccessDate.getOrElse(app.creationDate)))
+        .map(app => UnusedApplication(app.applicationId, app.applicationName, app.administrators, environment, app.lastAccessDate.getOrElse(app.creationDate)))
     }
 
     def noLongerUnusedApplications(knownApplications: List[UnusedApplication], currentUnusedApplications: List[ApplicationUsageDetails]): Set[UUID] = {

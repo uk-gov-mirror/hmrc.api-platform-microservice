@@ -30,6 +30,7 @@ import uk.gov.hmrc.apiplatformmicroservice.util.AsyncHmrcSpec
 import uk.gov.hmrc.mongo.{MongoConnector, MongoSpecSupport}
 
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.Random
 
 class UnusedApplicationsRepositorySpec extends AsyncHmrcSpec
   with MongoSpecSupport
@@ -55,8 +56,10 @@ class UnusedApplicationsRepositorySpec extends AsyncHmrcSpec
   }
 
   trait Setup {
-    def sandboxApplication(applicationId: UUID) = UnusedApplication(applicationId, Environment.SANDBOX, DateTime.now)
-    def productionApplication(applicationId: UUID) = UnusedApplication(applicationId, Environment.PRODUCTION, DateTime.now)
+    def sandboxApplication(applicationId: UUID) =
+      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.SANDBOX, DateTime.now)
+    def productionApplication(applicationId: UUID) =
+      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.PRODUCTION, DateTime.now)
   }
 
   "The 'unusedApplications' collection" should {
