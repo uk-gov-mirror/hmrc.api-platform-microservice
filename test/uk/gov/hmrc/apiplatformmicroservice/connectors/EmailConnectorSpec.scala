@@ -22,6 +22,7 @@ import org.scalatest.{Matchers, OptionValues, WordSpec}
 import org.scalatestplus.play.WsScalaTestClient
 import play.api.http.Status._
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits}
+import uk.gov.hmrc.apiplatformmicroservice.models.UnusedApplicationToBeDeletedNotification
 import uk.gov.hmrc.http.{HeaderCarrier, HttpResponse}
 import uk.gov.hmrc.play.bootstrap.http.HttpClient
 
@@ -42,44 +43,57 @@ class EmailConnectorSpec
   private val baseUrl = s"http://example.com"
   private val hubTestTitle = "Unit Test Hub Title"
   private val hubUrl = "http://localhost:9685"
-  private val hubLink = s"$hubUrl/developer/registration"
 
   trait Setup {
     val mockHttpClient = mock[HttpClient]
     val config = EmailConfig(baseUrl, hubUrl, hubTestTitle)
     val connector = new EmailConnector(mockHttpClient, config)
 
+    val expectedUrl = s"${config.baseUrl}/hmrc/email"
+
     def emailWillReturn(result: Future[HttpResponse]) = {
-      when(mockHttpClient.POST[SendEmailRequest, HttpResponse](*, *, *)(*, *, *, *)).thenReturn(result)
+      when(mockHttpClient.POST[SendEmailRequest, HttpResponse](eqTo(expectedUrl), *, *)(*, *, *, *)).thenReturn(result)
     }
 
     def verifyEmailCalled(request: SendEmailRequest) = {
-      val expectedUrl = s"${config.baseUrl}/hmrc/email"
       verify(mockHttpClient).POST[SendEmailRequest, HttpResponse](eqTo(expectedUrl), eqTo(request), *)(*, *, *, *)
     }
   }
 
   "emailConnector" should {
-    val adminEmail = "admin1@example.com"
-    val application = "Test Application"
+    "send unused application to be deleted email" in new Setup {
 
+      val expectedTemplateId = "apiApplicationToBeDeletedNotification"
 
-//    "send unused application to be deleted email" in new Setup {
-//
-//      val expectedTemplateId = "apiApplicationToBeDeletedNotification"
-//      val expectedToEmails = Set(adminEmail)
-//      val expectedParameters: Map[String, String] = Map(
-//        "applicationName" -> application,
-//        "developerHubTitle" -> hubTestTitle
-//      )
-//
-//      emailWillReturn(Future(HttpResponse(OK)))
-//
-//      await(connector.sendApplicationToBeDeletedNotification(application, Set(adminEmail)))
-//
-//      val expectedRequest = SendEmailRequest(expectedToEmails, expectedTemplateId, expectedParameters)
-//      verifyEmailCalled(expectedRequest)
-//    }
+      val adminEmail = "admin1@example.com"
+      val applicationName = "Test Application"
+      val userFirstName = "Fred"
+      val userLastName = "Bloggs"
+      val environmentName = "External Test"
+      val timeSinceLastUse = "335 days"
+      val timeBeforeDeletion = "365 days"
+      val dateOfScheduledDeletion = "20 June 2020"
+
+      val notification =
+        UnusedApplicationToBeDeletedNotification(
+          adminEmail, userFirstName, userLastName, applicationName, environmentName, timeSinceLastUse, timeBeforeDeletion, dateOfScheduledDeletion)
+
+      emailWillReturn(Future(HttpResponse(OK)))
+
+      await(connector.sendApplicationToBeDeletedNotification(notification))
+
+      val expectedToEmails = Set(adminEmail)
+      val expectedParameters: Map[String, String] = Map(
+        "userFirstName" -> userFirstName,
+        "userLastName" -> userLastName,
+        "applicationName" -> applicationName,
+        "environmentName" -> environmentName,
+        "timeSinceLastUse" -> timeSinceLastUse,
+        "timeBeforeDeletion" -> timeBeforeDeletion,
+        "dateOfScheduledDeletion" -> dateOfScheduledDeletion
+      )
+      verifyEmailCalled(SendEmailRequest(expectedToEmails, expectedTemplateId, expectedParameters))
+    }
 
   }
 }
