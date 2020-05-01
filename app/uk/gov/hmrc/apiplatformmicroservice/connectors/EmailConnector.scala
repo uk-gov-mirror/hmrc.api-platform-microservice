@@ -45,7 +45,7 @@ class EmailConnector @Inject()(httpClient: HttpClient, config: EmailConfig)(impl
   val devHubTitle = config.devHubTitle
 
   def sendApplicationToBeDeletedNotification(applicationToBeDeletedNotification: UnusedApplicationToBeDeletedNotification)
-                                            (implicit hc: HeaderCarrier): Future[HttpResponse] = {
+                                            (implicit hc: HeaderCarrier): Future[Boolean] = {
     post(
       SendEmailRequest(
         Set(applicationToBeDeletedNotification.userEmailAddress),
@@ -60,14 +60,13 @@ class EmailConnector @Inject()(httpClient: HttpClient, config: EmailConfig)(impl
           "dateOfScheduledDeletion" -> applicationToBeDeletedNotification.dateOfScheduledDeletion)))
   }
 
-  private def post(payload: SendEmailRequest)(implicit hc: HeaderCarrier): Future[HttpResponse] = {
+  private def post(payload: SendEmailRequest)(implicit hc: HeaderCarrier): Future[Boolean] = {
     val url = s"$serviceUrl/hmrc/email"
 
-    def extractError(response: HttpResponse): RuntimeException = {
+    def extractError(response: HttpResponse): String = {
       Try(response.json \ "message") match {
-        case Success(jsValue) => new RuntimeException(jsValue.as[String])
-        case Failure(_) => new RuntimeException(
-          s"Unable send email. Unexpected error for url=$url status=${response.status} response=${response.body}")
+        case Success(jsValue) => jsValue.as[String]
+        case Failure(_) => s"Unable send email. Unexpected error for url=$url status=${response.status} response=${response.body}"
       }
     }
 
@@ -75,9 +74,13 @@ class EmailConnector @Inject()(httpClient: HttpClient, config: EmailConfig)(impl
       .map { response =>
         Logger.info(s"Sent '${payload.templateId}' to: ${payload.to.mkString(",")} with response: ${response.status}")
         response.status match {
-          case status if status >= 200 && status <= 299 => response
-          case NOT_FOUND => throw new RuntimeException(s"Unable to send email. Downstream endpoint not found: $url")
-          case _ => throw extractError(response)
+          case status if status >= 200 && status <= 299 => true
+          case NOT_FOUND =>
+            Logger.error(s"Unable to send email. Downstream endpoint not found: $url")
+            false
+          case _ =>
+            Logger.error(extractError(response))
+            false
         }
       }
   }

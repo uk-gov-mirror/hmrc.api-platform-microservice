@@ -21,6 +21,7 @@ import org.mockito.scalatest.MockitoSugar
 import org.scalatest.{Matchers, OptionValues, WordSpec}
 import org.scalatestplus.play.WsScalaTestClient
 import play.api.http.Status._
+import play.api.libs.json.Json
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits}
 import uk.gov.hmrc.apiplatformmicroservice.models.UnusedApplicationToBeDeletedNotification
 import uk.gov.hmrc.http.{HeaderCarrier, HttpResponse}
@@ -51,11 +52,11 @@ class EmailConnectorSpec
 
     val expectedUrl = s"${config.baseUrl}/hmrc/email"
 
-    def emailWillReturn(result: Future[HttpResponse]) = {
+    def emailServiceWillReturn(result: Future[HttpResponse]) = {
       when(mockHttpClient.POST[SendEmailRequest, HttpResponse](eqTo(expectedUrl), *, *)(*, *, *, *)).thenReturn(result)
     }
 
-    def verifyEmailCalled(request: SendEmailRequest) = {
+    def verifyEmailServiceCalled(request: SendEmailRequest) = {
       verify(mockHttpClient).POST[SendEmailRequest, HttpResponse](eqTo(expectedUrl), eqTo(request), *)(*, *, *, *)
     }
   }
@@ -78,10 +79,11 @@ class EmailConnectorSpec
         UnusedApplicationToBeDeletedNotification(
           adminEmail, userFirstName, userLastName, applicationName, environmentName, timeSinceLastUse, timeBeforeDeletion, dateOfScheduledDeletion)
 
-      emailWillReturn(Future(HttpResponse(OK)))
+      emailServiceWillReturn(Future(HttpResponse(OK)))
 
-      await(connector.sendApplicationToBeDeletedNotification(notification))
+      val successful = await(connector.sendApplicationToBeDeletedNotification(notification))
 
+      successful should be (true)
       val expectedToEmails = Set(adminEmail)
       val expectedParameters: Map[String, String] = Map(
         "userFirstName" -> userFirstName,
@@ -92,8 +94,25 @@ class EmailConnectorSpec
         "timeBeforeDeletion" -> timeBeforeDeletion,
         "dateOfScheduledDeletion" -> dateOfScheduledDeletion
       )
-      verifyEmailCalled(SendEmailRequest(expectedToEmails, expectedTemplateId, expectedParameters))
+      verifyEmailServiceCalled(SendEmailRequest(expectedToEmails, expectedTemplateId, expectedParameters))
     }
 
+    "return false if email service returns 404" in new Setup {
+      emailServiceWillReturn(Future(HttpResponse(NOT_FOUND)))
+
+      val successful = await(connector.sendApplicationToBeDeletedNotification(UnusedApplicationToBeDeletedNotification(
+        "adminEmail", "userFirstName", "userLastName", "applicationName", "environmentName", "timeSinceLastUse", "timeBeforeDeletion", "dateOfScheduledDeletion")))
+
+      successful should be (false)
+    }
+
+    "return false for any other failure" in new Setup {
+      emailServiceWillReturn(Future(HttpResponse(INTERNAL_SERVER_ERROR, Some(Json.obj("message" -> "error")))))
+
+      val successful = await(connector.sendApplicationToBeDeletedNotification(UnusedApplicationToBeDeletedNotification(
+        "adminEmail", "userFirstName", "userLastName", "applicationName", "environmentName", "timeSinceLastUse", "timeBeforeDeletion", "dateOfScheduledDeletion")))
+
+      successful should be (false)
+    }
   }
 }

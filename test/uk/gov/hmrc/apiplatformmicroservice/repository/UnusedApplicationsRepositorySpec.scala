@@ -75,8 +75,6 @@ class UnusedApplicationsRepositorySpec extends AsyncHmrcSpec
   }
 
   "applicationsByEnvironment" should {
-
-
     "correctly retrieve SANDBOX applications" in new Setup {
       val sandboxApplicationId = UUID.randomUUID
 
