@@ -15,9 +15,7 @@
  */
 
 package uk.gov.hmrc.apiplatformmicroservice.scheduled
-import java.util.UUID
-
-import javax.inject.{Inject, Singleton, Named}
+import javax.inject.{Inject, Named, Singleton}
 import net.ceedubs.ficus.Ficus._
 import org.joda.time.DateTime
 import play.api.{Configuration, Logger}
@@ -54,20 +52,6 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
         .map(app => UnusedApplication(app.applicationId, app.applicationName, app.administrators, environment, app.lastAccessDate.getOrElse(app.creationDate)))
     }
 
-    def noLongerUnusedApplications(knownApplications: List[UnusedApplication], currentUnusedApplications: List[ApplicationUsageDetails]): Set[UUID] = {
-      val currentUnusedApplicationIds = currentUnusedApplications.map(_.applicationId)
-      knownApplications
-        .filterNot(app => currentUnusedApplicationIds.contains(app.applicationId))
-        .map(_.applicationId)
-        .toSet
-    }
-
-    def removeApplications(applicationsToRemove: Set[UUID]) =
-      Future.sequence(applicationsToRemove.map { applicationId =>
-        Logger.info(s"[UpdateUnusedApplicationRecordsJob] Application [$applicationId] in $environment environment has been used since last update - removing from list of unused applications to delete")
-        unusedApplicationsRepository.deleteApplication(environment, applicationId)
-      })
-
     for {
       knownApplications <- unusedApplicationsRepository.applicationsByEnvironment(environment)
       currentUnusedApplications <- thirdPartyApplicationConnector.applicationsLastUsedBefore(notificationCutoffDate())
@@ -75,11 +59,7 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
       newUnusedApplications = unknownApplications(knownApplications, currentUnusedApplications)
       _ = Logger.info(s"[UpdateUnusedApplicationRecordsJob] Found ${newUnusedApplications.size} new unused applications since last update")
 
-      recentlyUsedApplications = noLongerUnusedApplications(knownApplications, currentUnusedApplications)
-      _ = Logger.info(s"[UpdateUnusedApplicationRecordsJob] Found ${recentlyUsedApplications.size} applications that have been used since last update")
-
       _ = if(newUnusedApplications.nonEmpty) unusedApplicationsRepository.bulkInsert(newUnusedApplications)
-      _ <- removeApplications(recentlyUsedApplications)
     } yield RunningOfJobSuccessful
   }
 }

@@ -99,6 +99,16 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
     )
   }
 
+  "notificationCutoffDate" should {
+    "correctly calculate date to retrieve applications not used since" in new SandboxJobSetup {
+      val expectedCutoffDate = DateTime.now.minusDays(335)
+
+      val calculatedCutoffDate = underTest.notificationCutoffDate()
+
+      calculatedCutoffDate.getMillis must be (expectedCutoffDate.getMillis +- 500) // tolerance of 500 milliseconds
+    }
+  }
+
   "SANDBOX job" should {
     "add all newly discovered unused applications to database" in new SandboxJobSetup {
       val applicationWithLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
@@ -137,19 +147,6 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
       verifyNoInteractions(mockProductionThirdPartyApplicationConnector)
     }
 
-    "remove applications that have been used since last update" in new SandboxJobSetup {
-      val application: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
-
-      when(mockSandboxThirdPartyApplicationConnector.applicationsLastUsedBefore(*)).thenReturn(Future.successful(List.empty))
-      when(mockUnusedApplicationsRepository.applicationsByEnvironment(Environment.SANDBOX)).thenReturn(Future(List(application._2)))
-      when(mockUnusedApplicationsRepository.deleteApplication(Environment.SANDBOX, application._2.applicationId)).thenReturn(Future.successful(true))
-
-      await(underTest.runJob)
-
-      verify(mockUnusedApplicationsRepository).deleteApplication(Environment.SANDBOX, application._2.applicationId)
-      verifyNoInteractions(mockProductionThirdPartyApplicationConnector)
-    }
   }
 
   "PRODUCTION job" should {
@@ -190,22 +187,9 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
       verifyNoInteractions(mockSandboxThirdPartyApplicationConnector)
     }
 
-    "remove applications that have been used since last update" in new ProductionJobSetup {
-      val application: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
-
-      when(mockProductionThirdPartyApplicationConnector.applicationsLastUsedBefore(*)).thenReturn(Future.successful(List.empty))
-      when(mockUnusedApplicationsRepository.applicationsByEnvironment(Environment.PRODUCTION)).thenReturn(Future(List(application._2)))
-      when(mockUnusedApplicationsRepository.deleteApplication(Environment.PRODUCTION, application._2.applicationId)).thenReturn(Future.successful(true))
-
-      await(underTest.runJob)
-
-      verify(mockUnusedApplicationsRepository).deleteApplication(Environment.PRODUCTION, application._2.applicationId)
-      verifyNoInteractions(mockSandboxThirdPartyApplicationConnector)
-    }
   }
 
-  def applicationDetails(environment: Environment,
+  private def applicationDetails(environment: Environment,
                          creationDate: DateTime,
                          lastAccessDate: Option[DateTime],
                          administrators: Set[String]): (ApplicationUsageDetails, UnusedApplication) = {
