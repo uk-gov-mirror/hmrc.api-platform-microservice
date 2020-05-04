@@ -42,6 +42,11 @@ class ThirdPartyDeveloperConnector @Inject()(config: ThirdPartyDeveloperConnecto
     http.GET[Seq[DeveloperResponse]](s"${config.baseUrl}/unregistered-developer/expired", Seq("limit" -> limit.toString)).map(_.map(_.email))
   }
 
+  def fetchVerifiedDevelopers(emailAddresses: Set[String])(implicit hc: HeaderCarrier): Future[Seq[(String, String, String)]] = {
+    val queryParams = Seq("status" -> "VERIFIED", "emails" -> emailAddresses.mkString(","))
+    http.GET[Seq[DeveloperResponse]](s"${config.baseUrl}/developers", queryParams).map(_.map(dev => (dev.email, dev.firstName, dev.lastName)))
+  }
+
   def deleteDeveloper(email: String)(implicit hc: HeaderCarrier): Future[Int] = {
     http.POST(s"${config.baseUrl}/developer/delete?notifyDeveloper=false", DeleteDeveloperRequest(email)).map(_.status)
   }
@@ -54,7 +59,7 @@ class ThirdPartyDeveloperConnector @Inject()(config: ThirdPartyDeveloperConnecto
 object ThirdPartyDeveloperConnector {
   private[connectors] case class DeleteDeveloperRequest(emailAddress: String)
   private[connectors] case class DeleteUnregisteredDevelopersRequest(emails: Seq[String])
-  private[connectors] case class DeveloperResponse(email: String)
+  private[connectors] case class DeveloperResponse(email: String, firstName: String, lastName: String)
   case class ThirdPartyDeveloperConnectorConfig(baseUrl: String)
 
   object JsonFormatters {
