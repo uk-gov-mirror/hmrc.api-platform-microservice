@@ -28,9 +28,9 @@ import play.api.Configuration
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits}
 import play.modules.reactivemongo.ReactiveMongoComponent
 import reactivemongo.api.commands.MultiBulkWriteResult
-import uk.gov.hmrc.apiplatformmicroservice.connectors.{ProductionThirdPartyApplicationConnector, SandboxThirdPartyApplicationConnector}
+import uk.gov.hmrc.apiplatformmicroservice.connectors.{ProductionThirdPartyApplicationConnector, SandboxThirdPartyApplicationConnector, ThirdPartyDeveloperConnector}
 import uk.gov.hmrc.apiplatformmicroservice.models.Environment.Environment
-import uk.gov.hmrc.apiplatformmicroservice.models.{ApplicationUsageDetails, Environment, UnusedApplication}
+import uk.gov.hmrc.apiplatformmicroservice.models.{Administrator, ApplicationUsageDetails, Environment, UnusedApplication}
 import uk.gov.hmrc.apiplatformmicroservice.repository.UnusedApplicationsRepository
 import uk.gov.hmrc.mongo.{MongoConnector, MongoSpecSupport}
 
@@ -70,6 +70,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
     val mockSandboxThirdPartyApplicationConnector: SandboxThirdPartyApplicationConnector = mock[SandboxThirdPartyApplicationConnector]
     val mockProductionThirdPartyApplicationConnector: ProductionThirdPartyApplicationConnector = mock[ProductionThirdPartyApplicationConnector]
+    val mockThirdPartyDeveloperConnector: ThirdPartyDeveloperConnector = mock[ThirdPartyDeveloperConnector]
     val mockUnusedApplicationsRepository: UnusedApplicationsRepository = mock[UnusedApplicationsRepository]
 
     val reactiveMongoComponent: ReactiveMongoComponent = new ReactiveMongoComponent {
@@ -82,6 +83,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
     val underTest = new UpdateUnusedSandboxApplicationRecordJob(
       mockSandboxThirdPartyApplicationConnector,
+      mockThirdPartyDeveloperConnector,
       mockUnusedApplicationsRepository,
       configuration,
       reactiveMongoComponent
@@ -93,6 +95,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
     val underTest = new UpdateUnusedProductionApplicationRecordJob(
       mockProductionThirdPartyApplicationConnector,
+      mockThirdPartyDeveloperConnector,
       mockUnusedApplicationsRepository,
       configuration,
       reactiveMongoComponent
@@ -111,13 +114,15 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
   "SANDBOX job" should {
     "add all newly discovered unused applications to database" in new SandboxJobSetup {
+      val adminUserEmail = "foo@bar.com"
       val applicationWithLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
+        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set(adminUserEmail))
       val applicationWithoutLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), None, Set())
+        applicationDetails(Environment.SANDBOX, DateTime.now.minusMonths(13), None, Set(adminUserEmail))
 
       when(mockSandboxThirdPartyApplicationConnector.applicationsLastUsedBefore(*))
         .thenReturn(Future.successful(List(applicationWithLastUseDate._1, applicationWithoutLastUseDate._1)))
+      when(mockThirdPartyDeveloperConnector.fetchVerifiedDevelopers(Set(adminUserEmail))).thenReturn(Future.successful(Seq((adminUserEmail, "Foo", "Bar"))))
       when(mockUnusedApplicationsRepository.applicationsByEnvironment(Environment.SANDBOX)).thenReturn(Future(List.empty))
 
       val insertCaptor: ArgumentCaptor[Seq[UnusedApplication]] = ArgumentCaptor.forClass(classOf[Seq[UnusedApplication]])
@@ -144,6 +149,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
       await(underTest.runJob)
 
       verify(mockUnusedApplicationsRepository, times(0)).bulkInsert(*)(*)
+      verifyNoInteractions(mockThirdPartyDeveloperConnector)
       verifyNoInteractions(mockProductionThirdPartyApplicationConnector)
     }
 
@@ -151,13 +157,15 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
   "PRODUCTION job" should {
     "add all newly discovered unused applications to database" in new ProductionJobSetup {
+      val adminUserEmail = "foo@bar.com"
       val applicationWithLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set())
+        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), Some(DateTime.now.minusMonths(13)), Set(adminUserEmail))
       val applicationWithoutLastUseDate: (ApplicationUsageDetails, UnusedApplication) =
-        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), None, Set())
+        applicationDetails(Environment.PRODUCTION, DateTime.now.minusMonths(13), None, Set(adminUserEmail))
 
       when(mockProductionThirdPartyApplicationConnector.applicationsLastUsedBefore(*))
         .thenReturn(Future.successful(List(applicationWithLastUseDate._1, applicationWithoutLastUseDate._1)))
+      when(mockThirdPartyDeveloperConnector.fetchVerifiedDevelopers(Set(adminUserEmail))).thenReturn(Future.successful(Seq((adminUserEmail, "Foo", "Bar"))))
       when(mockUnusedApplicationsRepository.applicationsByEnvironment(Environment.PRODUCTION)).thenReturn(Future(List.empty))
 
       val insertCaptor: ArgumentCaptor[Seq[UnusedApplication]] = ArgumentCaptor.forClass(classOf[Seq[UnusedApplication]])
@@ -184,6 +192,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
       await(underTest.runJob)
 
       verify(mockUnusedApplicationsRepository, times(0)).bulkInsert(*)(*)
+      verifyNoInteractions(mockThirdPartyDeveloperConnector)
       verifyNoInteractions(mockSandboxThirdPartyApplicationConnector)
     }
 
@@ -195,8 +204,9 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
                          administrators: Set[String]): (ApplicationUsageDetails, UnusedApplication) = {
     val applicationId = UUID.randomUUID()
     val applicationName = Random.alphanumeric.take(10).mkString
+    val administratorDetails = administrators.map(admin => Administrator(admin, "Foo", "Bar"))
 
     (ApplicationUsageDetails(applicationId, applicationName, administrators, creationDate, lastAccessDate),
-      UnusedApplication(applicationId, applicationName, administrators, environment, lastAccessDate.getOrElse(creationDate)))
+      UnusedApplication(applicationId, applicationName, administratorDetails, environment, lastAccessDate.getOrElse(creationDate)))
   }
 }

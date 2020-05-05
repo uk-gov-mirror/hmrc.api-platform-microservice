@@ -30,7 +30,16 @@ case class ApplicationUsageDetails(applicationId: UUID,
                                    creationDate: DateTime,
                                    lastAccessDate: Option[DateTime])
 
-case class UnusedApplication(applicationId: UUID, applicationName: String, administrators: Set[String], environment: Environment, lastInteractionDate: DateTime)
+case class Administrator(emailAddress: String, firstName: String, lastName: String)
+case object Administrator {
+  def apply(emailAddress: String, firstName: String, lastName: String): Administrator = new Administrator(emailAddress, firstName, lastName)
+}
+
+case class UnusedApplication(applicationId: UUID,
+                             applicationName: String,
+                             administrators: Set[Administrator],
+                             environment: Environment,
+                             lastInteractionDate: DateTime)
 
 case class UnusedApplicationToBeDeletedNotification(userEmailAddress: String,
                                                     userFirstName: String,
@@ -51,11 +60,12 @@ object MongoFormat {
 
   implicit def environmentWrites: Writes[Environment.Value] = (v: Environment.Value) => JsString(v.toString)
   implicit val environmentFormat: Format[Environment.Value] = Format(environmentReads(), environmentWrites)
+  implicit val administratorFormat: Format[Administrator] = Format(Json.reads[Administrator], Json.writes[Administrator])
 
   val unusedApplicationReads: Reads[UnusedApplication] = (
     (JsPath \ "applicationId").read[UUID] and
       (JsPath \ "applicationName").read[String] and
-      (JsPath \ "administrators").read[Set[String]] and
+      (JsPath \ "administrators").read[Set[Administrator]] and
       (JsPath \ "environment").read[Environment] and
       (JsPath \ "lastInteractionDate").read[DateTime]
     )(UnusedApplication.apply _)

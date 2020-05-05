@@ -42,7 +42,9 @@ class ThirdPartyDeveloperConnector @Inject()(config: ThirdPartyDeveloperConnecto
     http.GET[Seq[DeveloperResponse]](s"${config.baseUrl}/unregistered-developer/expired", Seq("limit" -> limit.toString)).map(_.map(_.email))
   }
 
-  def fetchVerifiedDevelopers(emailAddresses: Set[String])(implicit hc: HeaderCarrier): Future[Seq[(String, String, String)]] = {
+  def fetchVerifiedDevelopers(emailAddresses: Set[String]): Future[Seq[(String, String, String)]] = {
+    implicit val hc: HeaderCarrier = HeaderCarrier()
+
     val queryParams = Seq("status" -> "VERIFIED", "emails" -> emailAddresses.mkString(","))
     http.GET[Seq[DeveloperResponse]](s"${config.baseUrl}/developers", queryParams).map(_.map(dev => (dev.email, dev.firstName, dev.lastName)))
   }
