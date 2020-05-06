@@ -22,7 +22,8 @@ import org.mockito.Mockito._
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatestplus.mockito.MockitoSugar
 import play.api.http.Status.OK
-import uk.gov.hmrc.apiplatformmicroservice.connectors.ThirdPartyDeveloperConnector.JsonFormatters.{formatDeleteDeveloperRequest, formatDeleteUnregisteredDevelopersRequest}
+import play.api.libs.json.{JsValue, Json}
+import uk.gov.hmrc.apiplatformmicroservice.connectors.ThirdPartyDeveloperConnector.JsonFormatters.{formatDeleteDeveloperRequest, formatDeleteUnregisteredDevelopersRequest, formatDeveloperResponse}
 import uk.gov.hmrc.apiplatformmicroservice.connectors.ThirdPartyDeveloperConnector.{DeleteDeveloperRequest, DeleteUnregisteredDevelopersRequest, DeveloperResponse, ThirdPartyDeveloperConnectorConfig}
 import uk.gov.hmrc.http._
 import uk.gov.hmrc.play.bootstrap.http.HttpClient
@@ -51,7 +52,7 @@ class ThirdPartyDeveloperConnectorSpec extends UnitSpec with ScalaFutures with M
     "return developer emails" in new Setup {
       when(mockHttp.GET[Seq[DeveloperResponse]](meq(endpoint("developers")),
         meq(Seq("createdBefore" -> "20200201", "limit" -> s"$limit", "status" -> "UNVERIFIED")))(any(), any(), any()))
-        .thenReturn(successful(Seq(DeveloperResponse(devEmail, "Fred", "Bloggs"))))
+        .thenReturn(successful(Seq(DeveloperResponse(devEmail, "Fred", "Bloggs", false))))
 
       val result: Seq[String] = await(connector.fetchUnverifiedDevelopers(new DateTime(2020, 2, 1, 0, 0), limit))
 
@@ -71,7 +72,7 @@ class ThirdPartyDeveloperConnectorSpec extends UnitSpec with ScalaFutures with M
     val limit = 10
     "return developer emails" in new Setup {
       when(mockHttp.GET[Seq[DeveloperResponse]](meq(endpoint("unregistered-developer/expired")), meq(Seq("limit" -> s"$limit")))(any(), any(), any()))
-        .thenReturn(successful(Seq(DeveloperResponse(devEmail, "Fred", "Bloggs"))))
+        .thenReturn(successful(Seq(DeveloperResponse(devEmail, "Fred", "Bloggs", false))))
 
       val result: Seq[String] = await(connector.fetchExpiredUnregisteredDevelopers(limit))
 
@@ -94,8 +95,15 @@ class ThirdPartyDeveloperConnectorSpec extends UnitSpec with ScalaFutures with M
       val verifiedUserLastName = "Bloggs"
       val unverifiedUserEmail = "bar@baz.com"
 
-      when(mockHttp.GET[Seq[DeveloperResponse]](meq(endpoint("developers")), meq(Seq("status" -> "VERIFIED", "emails" -> s"$verifiedUserEmail,$unverifiedUserEmail")))(any(), any(), any()))
-        .thenReturn(successful(Seq(DeveloperResponse(verifiedUserEmail, verifiedUserFirstName, verifiedUserLastName))))
+      when(mockHttp.POST[JsValue, Seq[DeveloperResponse]](
+        meq(endpoint("developers/get-by-emails")),
+        meq(Json.toJson(Seq(verifiedUserEmail, unverifiedUserEmail))),
+        any())(any(), any(), any(), any()))
+        .thenReturn(
+          successful(
+            Seq(
+              DeveloperResponse(verifiedUserEmail, verifiedUserFirstName, verifiedUserLastName, verified = true),
+              DeveloperResponse(unverifiedUserEmail, "", "", verified = false))))
 
       val result = await(connector.fetchVerifiedDevelopers(Set(verifiedUserEmail, unverifiedUserEmail)))
 
@@ -105,7 +113,11 @@ class ThirdPartyDeveloperConnectorSpec extends UnitSpec with ScalaFutures with M
     "propagate error when endpoint returns error" in new Setup {
       val verifiedUserEmail = "foo@baz.com"
       val unverifiedUserEmail = "bar@baz.com"
-      when(mockHttp.GET[Seq[DeveloperResponse]](meq(endpoint("developers")), meq(Seq("status" -> "VERIFIED", "emails" -> s"$verifiedUserEmail,$unverifiedUserEmail")))(any(), any(), any())).thenReturn(Future.failed(new BadRequestException("")))
+      when(mockHttp.POST[JsValue, Seq[DeveloperResponse]](
+        meq(endpoint("developers/get-by-emails")),
+        meq(Json.toJson(Seq(verifiedUserEmail, unverifiedUserEmail))),
+        any())(any(), any(), any(), any()))
+        .thenReturn(Future.failed(new BadRequestException("")))
 
       intercept[BadRequestException] {
         await(connector.fetchVerifiedDevelopers(Set(verifiedUserEmail, unverifiedUserEmail)))
