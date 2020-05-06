@@ -57,17 +57,16 @@ class UnusedApplicationsRepositorySpec extends AsyncHmrcSpec
 
   trait Setup {
     def sandboxApplication(applicationId: UUID) =
-      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.SANDBOX, DateTime.now)
+      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.SANDBOX, DateTime.now, DateTime.now.plusDays(30))
     def productionApplication(applicationId: UUID) =
-      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.PRODUCTION, DateTime.now)
+      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.PRODUCTION, DateTime.now, DateTime.now.plusDays(30))
   }
 
   "The 'unusedApplications' collection" should {
     "have all the current indexes" in {
 
       val expectedIndexes = Set(
-        Index(key = Seq("environment" -> Ascending, "applicationId" -> Ascending), name = Some("applicationIdIndex"), unique = true, background = true),
-        Index(key = Seq("lastInteractionDate" -> Ascending), name = Some("lastInteractionDateIndex"), unique = false, background = true)
+        Index(key = Seq("environment" -> Ascending, "applicationId" -> Ascending), name = Some("applicationIdIndex"), unique = true, background = true)
       )
 
       verifyIndexesVersionAgnostic(unusedApplicationRepository, expectedIndexes)

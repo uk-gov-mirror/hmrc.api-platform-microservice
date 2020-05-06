@@ -47,6 +47,8 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
       .minus(DeleteUnusedApplicationsAfter.toMillis)
       .plus(updateUnusedApplicationRecordsJobConfig.notifyDeletionPendingInAdvance.toMillis)
 
+  def calculateScheduledDeletionDate(lastInteractionDate: DateTime): DateTime = lastInteractionDate.plus(DeleteUnusedApplicationsAfter.toMillis)
+
   override def functionToExecute()(implicit executionContext: ExecutionContext): Future[RunningOfJobSuccessful] = {
     def administratorDetails(adminEmails: Set[String]): Future[Map[String, Administrator]] = {
       if (adminEmails.isEmpty) Future.successful(Map.empty)
@@ -69,13 +71,16 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
 
         for {
           adminDetails <- administratorDetails(adminEmailAddresses)
-          appDetails = unknownApplications.map(app =>
+          appDetails = unknownApplications.map(app => {
+            val lastInteractionDate = app.lastAccessDate.getOrElse(app.creationDate)
             UnusedApplication(
               app.applicationId,
               app.applicationName,
               verifiedAdminDetails(adminEmailAddresses, adminDetails),
               environment,
-              app.lastAccessDate.getOrElse(app.creationDate)))
+              lastInteractionDate,
+              calculateScheduledDeletionDate(lastInteractionDate))
+          })
         } yield appDetails
       } else Future.successful(Seq.empty)
     }

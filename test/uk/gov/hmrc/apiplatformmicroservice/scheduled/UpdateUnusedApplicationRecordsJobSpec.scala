@@ -36,6 +36,7 @@ import uk.gov.hmrc.mongo.{MongoConnector, MongoSpecSupport}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.concurrent.duration.FiniteDuration
 import scala.util.Random
 
 class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
@@ -44,17 +45,19 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
   trait Setup {
     val environmentName = "Test Environment"
 
-    def jobConfiguration(): Config = {
+    def jobConfiguration(deleteUnusedApplicationsAfter: Int = 365,
+                         notifyDeletionPendingInAdvanceForSandbox: Int = 30,
+                         notifyDeletionPendingInAdvanceForProduction: Int = 30): Config = {
       ConfigFactory.parseString(
         s"""
-           |deleteUnusedApplicationsAfter = 365d
+           |deleteUnusedApplicationsAfter = ${deleteUnusedApplicationsAfter}d
            |
            |UpdateUnusedApplicationsRecords-SANDBOX {
            |  startTime = "00:30"
            |  executionInterval = 1d
            |  enabled = false
            |  externalEnvironmentName = "Sandbox"
-           |  notifyDeletionPendingInAdvance = 30d
+           |  notifyDeletionPendingInAdvance = ${notifyDeletionPendingInAdvanceForSandbox}d
            |}
            |
            |UpdateUnusedApplicationsRecords-PRODUCTION {
@@ -62,7 +65,7 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
            |  executionInterval = 1d
            |  enabled = false
            |  externalEnvironmentName = "Production"
-           |  notifyDeletionPendingInAdvance = 30d
+           |  notifyDeletionPendingInAdvance = ${notifyDeletionPendingInAdvanceForProduction}d
            |}
            |
            |""".stripMargin)
@@ -79,7 +82,9 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
   }
 
   trait SandboxJobSetup extends Setup {
-    val configuration = new Configuration(jobConfiguration())
+    val deleteUnusedApplicationsAfter = 365
+    val notifyDeletionPendingInAdvance = 30
+    val configuration = new Configuration(jobConfiguration(deleteUnusedApplicationsAfter, notifyDeletionPendingInAdvance))
 
     val underTest = new UpdateUnusedSandboxApplicationRecordJob(
       mockSandboxThirdPartyApplicationConnector,
@@ -91,7 +96,10 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
   }
 
   trait ProductionJobSetup extends Setup {
-    val configuration = new Configuration(jobConfiguration())
+    val deleteUnusedApplicationsAfter = 365
+    val notifyDeletionPendingInAdvance = 30
+    val configuration =
+      new Configuration(jobConfiguration(deleteUnusedApplicationsAfter, notifyDeletionPendingInAdvanceForProduction = notifyDeletionPendingInAdvance))
 
     val underTest = new UpdateUnusedProductionApplicationRecordJob(
       mockProductionThirdPartyApplicationConnector,
@@ -104,11 +112,18 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
 
   "notificationCutoffDate" should {
     "correctly calculate date to retrieve applications not used since" in new SandboxJobSetup {
-      val expectedCutoffDate = DateTime.now.minusDays(335)
+      val daysDifference = deleteUnusedApplicationsAfter - notifyDeletionPendingInAdvance
+      val expectedCutoffDate = DateTime.now.minusDays(daysDifference)
 
       val calculatedCutoffDate = underTest.notificationCutoffDate()
 
       calculatedCutoffDate.getMillis must be (expectedCutoffDate.getMillis +- 500) // tolerance of 500 milliseconds
+    }
+  }
+
+  "calculateScheduledDeletionDate" should {
+    "correctly calculate date that application should be deleted" in new SandboxJobSetup {
+
     }
   }
 
@@ -205,8 +220,9 @@ class UpdateUnusedApplicationRecordsJobSpec extends PlaySpec
     val applicationId = UUID.randomUUID()
     val applicationName = Random.alphanumeric.take(10).mkString
     val administratorDetails = administrators.map(admin => Administrator(admin, "Foo", "Bar"))
+    val lastInteractionDate = lastAccessDate.getOrElse(creationDate)
 
     (ApplicationUsageDetails(applicationId, applicationName, administrators, creationDate, lastAccessDate),
-      UnusedApplication(applicationId, applicationName, administratorDetails, environment, lastAccessDate.getOrElse(creationDate)))
+      UnusedApplication(applicationId, applicationName, administratorDetails, environment, lastInteractionDate, lastInteractionDate.plusDays(365)))
   }
 }

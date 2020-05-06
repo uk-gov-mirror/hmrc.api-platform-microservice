@@ -39,7 +39,8 @@ case class UnusedApplication(applicationId: UUID,
                              applicationName: String,
                              administrators: Set[Administrator],
                              environment: Environment,
-                             lastInteractionDate: DateTime)
+                             lastInteractionDate: DateTime,
+                             scheduledDeletionDate: DateTime)
 
 case class UnusedApplicationToBeDeletedNotification(userEmailAddress: String,
                                                     userFirstName: String,
@@ -67,7 +68,8 @@ object MongoFormat {
       (JsPath \ "applicationName").read[String] and
       (JsPath \ "administrators").read[Set[Administrator]] and
       (JsPath \ "environment").read[Environment] and
-      (JsPath \ "lastInteractionDate").read[DateTime]
+      (JsPath \ "lastInteractionDate").read[DateTime] and
+      (JsPath \ "scheduledDeletionDate").read[DateTime]
     )(UnusedApplication.apply _)
 
   def environmentReads[Environment](): Reads[Environment.Value] = {
