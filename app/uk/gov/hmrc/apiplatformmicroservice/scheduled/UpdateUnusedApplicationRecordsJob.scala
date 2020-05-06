@@ -50,50 +50,54 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
   def calculateScheduledDeletionDate(lastInteractionDate: DateTime): DateTime = lastInteractionDate.plus(DeleteUnusedApplicationsAfter.toMillis)
 
   override def functionToExecute()(implicit executionContext: ExecutionContext): Future[RunningOfJobSuccessful] = {
-    def administratorDetails(adminEmails: Set[String]): Future[Map[String, Administrator]] = {
-      if (adminEmails.isEmpty) Future.successful(Map.empty)
-
-      for {
-        verifiedAdmins <- thirdPartyDeveloperConnector.fetchVerifiedDevelopers(adminEmails)
-      } yield verifiedAdmins.map(admin => admin._1 -> Administrator(admin._1, admin._2, admin._3)).toMap
-    }
-
-    def unknownApplications(knownApplications: List[UnusedApplication],
-                            currentUnusedApplications: List[ApplicationUsageDetails]): Future[Seq[UnusedApplication]] = {
-      def verifiedAdminDetails(adminEmails: Set[String], verifiedAdmins: Map[String, Administrator]): Set[Administrator] =
-        adminEmails.intersect(verifiedAdmins.keySet).flatMap(verifiedAdmins.get)
-
+    def unknownApplications(knownApplications: List[UnusedApplication], currentUnusedApplications: List[ApplicationUsageDetails]) = {
       val knownApplicationIds: Set[UUID] = knownApplications.map(_.applicationId).toSet
-      val unknownApplications: Seq[ApplicationUsageDetails] = currentUnusedApplications.filterNot(app => knownApplicationIds.contains(app.applicationId))
-
-      if (unknownApplications.nonEmpty) {
-        val adminEmailAddresses: Set[String] = unknownApplications.flatMap(_.administrators).toSet
-
-        for {
-          adminDetails <- administratorDetails(adminEmailAddresses)
-          appDetails = unknownApplications.map(app => {
-            val lastInteractionDate = app.lastAccessDate.getOrElse(app.creationDate)
-            UnusedApplication(
-              app.applicationId,
-              app.applicationName,
-              verifiedAdminDetails(adminEmailAddresses, adminDetails),
-              environment,
-              lastInteractionDate,
-              calculateScheduledDeletionDate(lastInteractionDate))
-          })
-        } yield appDetails
-      } else Future.successful(Seq.empty)
+      currentUnusedApplications.filterNot(app => knownApplicationIds.contains(app.applicationId))
     }
 
     for {
       knownApplications <- unusedApplicationsRepository.applicationsByEnvironment(environment)
       currentUnusedApplications <- thirdPartyApplicationConnector.applicationsLastUsedBefore(notificationCutoffDate())
 
-      newUnusedApplications <- unknownApplications(knownApplications, currentUnusedApplications)
+      newUnusedApplications: Seq[ApplicationUsageDetails] = unknownApplications(knownApplications, currentUnusedApplications)
       _ = Logger.info(s"[UpdateUnusedApplicationRecordsJob] Found ${newUnusedApplications.size} new unused applications since last update")
 
-      _ = if(newUnusedApplications.nonEmpty) unusedApplicationsRepository.bulkInsert(newUnusedApplications)
+      notifiedApplications <- sendEmailNotifications(newUnusedApplications)
+      _ = if(notifiedApplications.nonEmpty) unusedApplicationsRepository.bulkInsert(notifiedApplications)
     } yield RunningOfJobSuccessful
+  }
+
+  def sendEmailNotifications(unusedApplications: Seq[ApplicationUsageDetails])(implicit executionContext: ExecutionContext): Future[Seq[UnusedApplication]] = {
+    def administratorDetails(adminEmails: Set[String]): Future[Map[String, Administrator]] = {
+      if (adminEmails.isEmpty) {
+        Future.successful(Map.empty)
+      } else {
+        for {
+          verifiedAdmins <- thirdPartyDeveloperConnector.fetchVerifiedDevelopers(adminEmails)
+        } yield verifiedAdmins.map(admin => admin._1 -> Administrator(admin._1, admin._2, admin._3)).toMap
+      }
+    }
+
+    def verifiedAdminDetails(adminEmails: Set[String], verifiedAdmins: Map[String, Administrator]): Set[Administrator] =
+      adminEmails.intersect(verifiedAdmins.keySet).flatMap(verifiedAdmins.get)
+
+    if (unusedApplications.nonEmpty) {
+      val adminEmailAddresses: Set[String] = unusedApplications.flatMap(_.administrators).toSet
+
+      for {
+        adminDetails <- administratorDetails(adminEmailAddresses)
+        appDetails = unusedApplications.map(app => {
+          val lastInteractionDate = app.lastAccessDate.getOrElse(app.creationDate)
+          UnusedApplication(
+            app.applicationId,
+            app.applicationName,
+            verifiedAdminDetails(adminEmailAddresses, adminDetails),
+            environment,
+            lastInteractionDate,
+            calculateScheduledDeletionDate(lastInteractionDate))
+        })
+      } yield appDetails
+    } else Future.successful(Seq.empty)
   }
 }
 
