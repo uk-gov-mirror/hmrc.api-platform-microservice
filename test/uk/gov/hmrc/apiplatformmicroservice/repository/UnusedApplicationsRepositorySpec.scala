@@ -57,9 +57,9 @@ class UnusedApplicationsRepositorySpec extends AsyncHmrcSpec
 
   trait Setup {
     def sandboxApplication(applicationId: UUID) =
-      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.SANDBOX, DateTime.now, DateTime.now.plusDays(30))
+      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Seq(), Environment.SANDBOX, DateTime.now, DateTime.now.plusDays(30))
     def productionApplication(applicationId: UUID) =
-      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Set(), Environment.PRODUCTION, DateTime.now, DateTime.now.plusDays(30))
+      UnusedApplication(applicationId, Random.alphanumeric.take(10).mkString, Seq(), Environment.PRODUCTION, DateTime.now, DateTime.now.plusDays(30))
   }
 
   "The 'unusedApplications' collection" should {

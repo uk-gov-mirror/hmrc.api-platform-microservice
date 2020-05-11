@@ -22,9 +22,9 @@ import net.ceedubs.ficus.Ficus._
 import org.joda.time.DateTime
 import play.api.{Configuration, Logger}
 import play.modules.reactivemongo.ReactiveMongoComponent
-import uk.gov.hmrc.apiplatformmicroservice.connectors.{ThirdPartyApplicationConnector, ThirdPartyDeveloperConnector}
+import uk.gov.hmrc.apiplatformmicroservice.connectors.{EmailConnector, ThirdPartyApplicationConnector, ThirdPartyDeveloperConnector}
 import uk.gov.hmrc.apiplatformmicroservice.models.Environment.Environment
-import uk.gov.hmrc.apiplatformmicroservice.models.{Administrator, ApplicationUsageDetails, Environment, UnusedApplication}
+import uk.gov.hmrc.apiplatformmicroservice.models._
 import uk.gov.hmrc.apiplatformmicroservice.repository.UnusedApplicationsRepository
 
 import scala.concurrent.duration.FiniteDuration
@@ -33,6 +33,7 @@ import scala.concurrent.{ExecutionContext, Future}
 abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
                                                   thirdPartyApplicationConnector: ThirdPartyApplicationConnector,
                                                   thirdPartyDeveloperConnector: ThirdPartyDeveloperConnector,
+                                                  emailConnector: EmailConnector,
                                                   unusedApplicationsRepository: UnusedApplicationsRepository,
                                                   configuration: Configuration,
                                                   mongo: ReactiveMongoComponent)
@@ -68,7 +69,7 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
   }
 
   def sendEmailNotifications(unusedApplications: Seq[ApplicationUsageDetails])(implicit executionContext: ExecutionContext): Future[Seq[UnusedApplication]] = {
-    def administratorDetails(adminEmails: Set[String]): Future[Map[String, Administrator]] = {
+    def verifiedAdministratorDetails(adminEmails: Set[String]): Future[Map[String, Administrator]] = {
       if (adminEmails.isEmpty) {
         Future.successful(Map.empty)
       } else {
@@ -78,45 +79,72 @@ abstract class UpdateUnusedApplicationRecordsJob (environment: Environment,
       }
     }
 
-    def verifiedAdminDetails(adminEmails: Set[String], verifiedAdmins: Map[String, Administrator]): Set[Administrator] =
-      adminEmails.intersect(verifiedAdmins.keySet).flatMap(verifiedAdmins.get)
-
-    if (unusedApplications.nonEmpty) {
-      val adminEmailAddresses: Set[String] = unusedApplications.flatMap(_.administrators).toSet
+    def notifiyAdministrators(application: ApplicationUsageDetails,
+                                             verifiedAdminDetails: Map[String, Administrator]): Future[UnusedApplication] = {
+      val lastInteractionDate = application.lastAccessDate.getOrElse(application.creationDate)
+      val scheduledDeletionDate = calculateScheduledDeletionDate(lastInteractionDate)
+      val verifiedAppAdmins = application.administrators.intersect(verifiedAdminDetails.keySet).flatMap(verifiedAdminDetails.get)
 
       for {
-        adminDetails <- administratorDetails(adminEmailAddresses)
-        appDetails = unusedApplications.map(app => {
-          val lastInteractionDate = app.lastAccessDate.getOrElse(app.creationDate)
-          UnusedApplication(
-            app.applicationId,
-            app.applicationName,
-            verifiedAdminDetails(adminEmailAddresses, adminDetails),
-            environment,
-            lastInteractionDate,
-            calculateScheduledDeletionDate(lastInteractionDate))
-        })
+        notifiedAdmins: Seq[AdministratorNotification] <- Future.sequence(verifiedAppAdmins.map(admin => {
+          emailConnector.sendApplicationToBeDeletedNotification(emailNotification(application, admin)).map {
+            case true => AdministratorNotification.fromAdministrator(admin, Some(DateTime.now()))
+            case _ => AdministratorNotification.fromAdministrator(admin, None)
+          }
+        }).toSeq)
+      } yield notificationResult(application, notifiedAdmins, lastInteractionDate, scheduledDeletionDate)
+    }
+
+    if (unusedApplications.nonEmpty) {
+      for {
+        verifiedAdmins: Map[String, Administrator] <- verifiedAdministratorDetails(unusedApplications.flatMap(_.administrators).toSet)
+        appDetails: Seq[UnusedApplication] <- Future.sequence(unusedApplications.map(app => notifiyAdministrators(app, verifiedAdmins)))
       } yield appDetails
     } else Future.successful(Seq.empty)
   }
+
+  def emailNotification(application: ApplicationUsageDetails, administrator: Administrator): UnusedApplicationToBeDeletedNotification =
+    UnusedApplicationToBeDeletedNotification(
+      administrator.emailAddress,
+      administrator.firstName,
+      administrator.lastName,
+      application.applicationName,
+      updateUnusedApplicationRecordsJobConfig.externalEnvironmentName,
+      "",
+      s"${DeleteUnusedApplicationsAfter.length} ${DeleteUnusedApplicationsAfter.unit.toString.toLowerCase}",
+      "")
+
+  def notificationResult(application: ApplicationUsageDetails,
+                         notifiedAdmins: Seq[AdministratorNotification],
+                         lastInteractionDate: DateTime,
+                         scheduledDeletionDate: DateTime): UnusedApplication =
+    UnusedApplication(
+      application.applicationId,
+      application.applicationName,
+      notifiedAdmins,
+      environment,
+      lastInteractionDate,
+      scheduledDeletionDate)
 }
 
 @Singleton
 class UpdateUnusedSandboxApplicationRecordJob @Inject()(@Named("tpa-sandbox") thirdPartyApplicationConnector: ThirdPartyApplicationConnector,
                                                         thirdPartyDeveloperConnector: ThirdPartyDeveloperConnector,
+                                                        emailConnector: EmailConnector,
                                                         unusedApplicationsRepository: UnusedApplicationsRepository,
                                                         configuration: Configuration,
                                                         mongo: ReactiveMongoComponent)
   extends UpdateUnusedApplicationRecordsJob(
-    Environment.SANDBOX, thirdPartyApplicationConnector, thirdPartyDeveloperConnector, unusedApplicationsRepository, configuration, mongo)
+    Environment.SANDBOX, thirdPartyApplicationConnector, thirdPartyDeveloperConnector, emailConnector, unusedApplicationsRepository, configuration, mongo)
 
 @Singleton
 class UpdateUnusedProductionApplicationRecordJob @Inject()(@Named("tpa-production") thirdPartyApplicationConnector: ThirdPartyApplicationConnector,
                                                            thirdPartyDeveloperConnector: ThirdPartyDeveloperConnector,
+                                                           emailConnector: EmailConnector,
                                                            unusedApplicationsRepository: UnusedApplicationsRepository,
                                                            configuration: Configuration,
                                                            mongo: ReactiveMongoComponent)
   extends UpdateUnusedApplicationRecordsJob(
-    Environment.PRODUCTION, thirdPartyApplicationConnector, thirdPartyDeveloperConnector, unusedApplicationsRepository, configuration, mongo)
+    Environment.PRODUCTION, thirdPartyApplicationConnector, thirdPartyDeveloperConnector, emailConnector, unusedApplicationsRepository, configuration, mongo)
 
 case class UpdateUnusedApplicationRecordsJobConfig(notifyDeletionPendingInAdvance: FiniteDuration, externalEnvironmentName: String)

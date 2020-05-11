@@ -41,11 +41,10 @@ object SendEmailRequest {
 @Singleton
 class EmailConnector @Inject()(httpClient: HttpClient, config: EmailConfig)(implicit val ec: ExecutionContext) {
   val serviceUrl = config.baseUrl
-  val devHubBaseUrl = config.devHubBaseUrl
-  val devHubTitle = config.devHubTitle
 
-  def sendApplicationToBeDeletedNotification(applicationToBeDeletedNotification: UnusedApplicationToBeDeletedNotification)
-                                            (implicit hc: HeaderCarrier): Future[Boolean] = {
+  def sendApplicationToBeDeletedNotification(applicationToBeDeletedNotification: UnusedApplicationToBeDeletedNotification): Future[Boolean] = {
+    implicit val hc: HeaderCarrier = HeaderCarrier()
+
     post(
       SendEmailRequest(
         Set(applicationToBeDeletedNotification.userEmailAddress),
@@ -86,4 +85,4 @@ class EmailConnector @Inject()(httpClient: HttpClient, config: EmailConfig)(impl
   }
 }
 
-case class EmailConfig(baseUrl: String, devHubBaseUrl: String, devHubTitle: String)
+case class EmailConfig(baseUrl: String)

@@ -42,12 +42,10 @@ class EmailConnectorSpec
 
   implicit val hc: HeaderCarrier = HeaderCarrier()
   private val baseUrl = s"http://example.com"
-  private val hubTestTitle = "Unit Test Hub Title"
-  private val hubUrl = "http://localhost:9685"
 
   trait Setup {
     val mockHttpClient = mock[HttpClient]
-    val config = EmailConfig(baseUrl, hubUrl, hubTestTitle)
+    val config = EmailConfig(baseUrl)
     val connector = new EmailConnector(mockHttpClient, config)
 
     val expectedUrl = s"${config.baseUrl}/hmrc/email"

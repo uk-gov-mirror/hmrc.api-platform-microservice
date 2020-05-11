@@ -23,7 +23,7 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatestplus.mockito.MockitoSugar
 import play.api.http.Status.OK
 import play.api.libs.json.{JsValue, Json}
-import uk.gov.hmrc.apiplatformmicroservice.connectors.ThirdPartyDeveloperConnector.JsonFormatters.{formatDeleteDeveloperRequest, formatDeleteUnregisteredDevelopersRequest, formatDeveloperResponse}
+import uk.gov.hmrc.apiplatformmicroservice.connectors.ThirdPartyDeveloperConnector.JsonFormatters.{formatDeleteDeveloperRequest, formatDeleteUnregisteredDevelopersRequest}
 import uk.gov.hmrc.apiplatformmicroservice.connectors.ThirdPartyDeveloperConnector.{DeleteDeveloperRequest, DeleteUnregisteredDevelopersRequest, DeveloperResponse, ThirdPartyDeveloperConnectorConfig}
 import uk.gov.hmrc.http._
 import uk.gov.hmrc.play.bootstrap.http.HttpClient
@@ -52,7 +52,7 @@ class ThirdPartyDeveloperConnectorSpec extends UnitSpec with ScalaFutures with M
     "return developer emails" in new Setup {
       when(mockHttp.GET[Seq[DeveloperResponse]](meq(endpoint("developers")),
         meq(Seq("createdBefore" -> "20200201", "limit" -> s"$limit", "status" -> "UNVERIFIED")))(any(), any(), any()))
-        .thenReturn(successful(Seq(DeveloperResponse(devEmail, "Fred", "Bloggs", false))))
+        .thenReturn(successful(Seq(DeveloperResponse(devEmail, "Fred", "Bloggs", verified = false))))
 
       val result: Seq[String] = await(connector.fetchUnverifiedDevelopers(new DateTime(2020, 2, 1, 0, 0), limit))
 
