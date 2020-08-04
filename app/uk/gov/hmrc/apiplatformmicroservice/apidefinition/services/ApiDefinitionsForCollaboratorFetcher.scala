@@ -52,16 +52,28 @@ class ApiDefinitionsForCollaboratorFetcher @Inject()(principalDefinitionService:
   }
 
   private def filterVersions(api: APIDefinition, applicationIds: Seq[String]): Option[APIDefinition] = {
-    def activeVersions(version: APIVersion): Boolean = version.status != APIStatus.RETIRED
+    def activeVersions(version: APIVersion): Boolean = {
+      val x = version.status != APIStatus.RETIRED
+      println(s"Active versions are: $x")
+      x
+    }
 
     def visiblePrivateVersions(version: APIVersion): Boolean = version.access match {
-      case PrivateApiAccess( _, true) => true
-      case PrivateApiAccess(whitelistedApplicationIds, _) =>
-        whitelistedApplicationIds.exists(s => applicationIds.contains(s))
+      case PrivateApiAccess( _, true) => {
+        println("In case 1: Private version visiblee? true")
+        true
+      }
+      case PrivateApiAccess(whitelistedApplicationIds, _) => {
+        val x = whitelistedApplicationIds.exists(s => applicationIds.contains(s))
+        println (s"In case 2; Private version visible? : $x")
+        x
+      }
+        
       case _ => true
     }
 
     val filteredVersions = api.versions.filter(v => activeVersions(v) && visiblePrivateVersions(v))
+    println(s"filteredVersions: $filteredVersions")
 
     if (filteredVersions.isEmpty) None
     else Some(api.copy(versions = filteredVersions))

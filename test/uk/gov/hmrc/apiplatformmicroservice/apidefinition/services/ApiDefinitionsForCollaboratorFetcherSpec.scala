@@ -50,6 +50,13 @@ class ApiDefinitionsForCollaboratorFetcherSpec extends AsyncHmrcSpec with ApiDef
     val underTest = new ApiDefinitionsForCollaboratorFetcher(PrincipalApiDefinitionServiceMock.aMock,
       SubordinateApiDefinitionServiceMock.aMock ,ApplicationIdsForCollaboratorFetcherMock.aMock)
     SubordinateApiDefinitionServiceMock.FetchAllDefinitions.willReturnNoApiDefinitions()
+
+    val apiSubordinateDefinition = apiDefinition("customs-decs-api",
+      Seq(apiVersion("1.0", access = PrivateApiAccess().withWhitelistedAppIds(applicationId)), apiVersion("2.0", access = apiAccess())))
+
+    
+    val apiPrincipalDefinition = apiDefinition("customs-decs-api",
+      Seq(apiVersion("2.0", access = PrivateApiAccess().withWhitelistedAppIds(applicationId)), apiVersion("1.0", access = apiAccess())))
   }
 
   "ApiDefinitionsForCollaboratorFetcher" should {
@@ -73,6 +80,30 @@ class ApiDefinitionsForCollaboratorFetcherSpec extends AsyncHmrcSpec with ApiDef
 
       result mustBe Seq(subordinateHelloApi)
     }
+
+    "prefer subordinate API when it is present in both environments (CUSTOMS-DECLARATION)" in new Setup {
+      
+      PrincipalApiDefinitionServiceMock.FetchAllDefinitions.willReturnApiDefinitions(apiPrincipalDefinition)
+      SubordinateApiDefinitionServiceMock.FetchAllDefinitions.willReturnApiDefinitions(apiSubordinateDefinition)
+      ApplicationIdsForCollaboratorFetcherMock.FetchAllApplicationIds.willReturnApplicationIds(Seq.empty: _*)
+
+      val result = await(underTest.fetch(email))
+
+      result mustBe Seq(apiSubordinateDefinition)
+
+      ArrayBuffer(
+        APIDefinition(customs-decs-api,customs-decs-api,customs-decs-api,customs-decs-api,false,false,
+        List(
+          APIVersion(2.0,STABLE,PublicApiAccess(),NonEmptyList(Endpoint(Today's Date,/today,GET,List()), Endpoint(Yesterday's Date,/yesterday,GET,List())),false)),List())) 
+        
+        was not equal to 
+        
+      List(
+        APIDefinition(customs-decs-api,customs-decs-api,customs-decs-api,customs-decs-api,false,false,
+          List(
+            APIVersion(1.0,STABLE,PrivateApiAccess(WrappedArray(app-1),false),NonEmptyList(Endpoint(Today's Date,/today,GET,List()), Endpoint(Yesterday's Date,/yesterday,GET,List())),false), 
+            APIVersion(2.0,STABLE,PublicApiAccess(),NonEmptyList(Endpoint(Today's Date,/today,GET,List()), Endpoint(Yesterday's Date,/yesterday,GET,List())),false)),List()))
+}
 
     "filter out an api that requires trust" in new Setup {
       PrincipalApiDefinitionServiceMock.FetchAllDefinitions.willReturnApiDefinitions(helloApiDefinition, requiresTrustApi)
